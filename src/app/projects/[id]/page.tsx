@@ -15,6 +15,7 @@ import {
   Shield,
   Eye,
   User,
+  Upload,
 } from "lucide-react";
 
 interface Project {
@@ -105,6 +106,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
   const [members, setMembers] = useState<Member[]>([]);
   const [collaterals, setCollaterals] = useState<Collateral[]>([]);
   const [saving, setSaving] = useState(false);
+  const [reExtracting, setReExtracting] = useState(false);
 
   // Team invite state
   const [inviteEmail, setInviteEmail] = useState("");
@@ -129,6 +131,40 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
     const data = await res.json();
     setBrand(data);
     setSaving(false);
+  }
+
+  async function reExtractFromPdf(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setReExtracting(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/brand/extract-pdf", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(`Brand extraction failed: ${data.error || "Unknown error"}. Check your ANTHROPIC_API_KEY and API credits.`);
+      } else if (data._needs_key) {
+        alert("No API key configured. Add ANTHROPIC_API_KEY to your .env.local file and restart the dev server.");
+      } else if (data.error || data._note?.includes("could not be parsed")) {
+        alert(`Extraction issue: ${data._note || data.error}`);
+      } else {
+        // Patch the brand kit with extracted data
+        const patchRes = await fetch(`/api/projects/${id}/brand`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data),
+        });
+        const updated = await patchRes.json();
+        setBrand(updated);
+      }
+    } catch {
+      alert("Failed to extract brand from PDF.");
+    }
+    setReExtracting(false);
   }
 
   async function inviteMember() {
@@ -219,6 +255,25 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
       {/* Brand Kit Tab */}
       {tab === "brand" && brand && (
         <div className="grid grid-cols-2 gap-6 animate-fade-in">
+          {/* Re-extract from PDF */}
+          <div className="col-span-2 bg-[var(--card)] border border-dashed border-[var(--border)] rounded-xl p-4 flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Re-extract Brand from PDF</p>
+              <p className="text-xs text-[var(--muted)]">Upload a brand guidelines PDF to overwrite current values with AI-extracted data.</p>
+            </div>
+            <label className="inline-flex items-center gap-2 px-4 py-2 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded-lg text-sm font-medium transition-colors cursor-pointer">
+              {reExtracting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+              {reExtracting ? "Extracting..." : "Upload PDF"}
+              <input
+                type="file"
+                accept=".pdf"
+                onChange={reExtractFromPdf}
+                className="hidden"
+                disabled={reExtracting}
+              />
+            </label>
+          </div>
+
           {/* Colors */}
           <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-6">
             <h3 className="font-semibold mb-4">Colors</h3>

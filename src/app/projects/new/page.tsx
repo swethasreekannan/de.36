@@ -49,9 +49,19 @@ export default function NewProjectPage() {
         body: formData,
       });
       const data = await res.json();
-      setExtractedBrand(data);
+      if (!res.ok) {
+        alert(`Brand extraction failed: ${data.error || "Unknown error"}. Check your ANTHROPIC_API_KEY in .env.local and ensure you have API credits.`);
+        setExtractedBrand(null);
+      } else if (data._needs_key) {
+        setExtractedBrand(data);
+      } else if (data.error || data._note?.includes("could not be parsed")) {
+        alert(`Brand extraction returned unexpected data: ${data._note || data.error}`);
+        setExtractedBrand(null);
+      } else {
+        setExtractedBrand(data);
+      }
     } catch {
-      alert("Failed to extract brand from PDF");
+      alert("Failed to extract brand from PDF. Check the browser console for details.");
     }
     setExtracting(false);
   }

@@ -88,18 +88,23 @@ export async function POST(req: NextRequest) {
       // Send the actual PDF to Claude using native document support
       // Claude can SEE the PDF pages — colors, fonts, layouts, everything
       const pdfBase64 = buffer.toString("base64");
+      console.log(`[extract-pdf] Using Anthropic API. PDF size: ${(buffer.length / 1024).toFixed(1)}KB, base64 length: ${pdfBase64.length}`);
       const analysis = await analyzeWithClaude(anthropicKey, pdfBase64);
+      console.log("[extract-pdf] Anthropic extraction successful:", Object.keys(analysis));
       return NextResponse.json(analysis);
     }
 
     if (openaiKey) {
       // OpenAI fallback: send text content (less accurate for visual elements)
       const textContent = buffer.toString("utf-8").slice(0, 8000);
+      console.log(`[extract-pdf] Using OpenAI API fallback. Text content length: ${textContent.length}`);
       const analysis = await analyzeWithOpenAI(openaiKey, file.name, textContent);
+      console.log("[extract-pdf] OpenAI extraction successful:", Object.keys(analysis));
       return NextResponse.json(analysis);
     }
 
     // No API key — tell the user
+    console.warn("[extract-pdf] No API key configured. Set ANTHROPIC_API_KEY in .env.local");
     return NextResponse.json({
       primary_color: "",
       secondary_color: "",
@@ -113,8 +118,9 @@ export async function POST(req: NextRequest) {
       _needs_key: true,
     });
   } catch (error) {
+    console.error("[extract-pdf] Extraction failed:", error);
     return NextResponse.json(
-      { error: `PDF extraction failed: ${error}` },
+      { error: `PDF extraction failed: ${error instanceof Error ? error.message : error}` },
       { status: 500 }
     );
   }
@@ -156,6 +162,7 @@ async function analyzeWithClaude(apiKey: string, pdfBase64: string) {
   const data = await response.json();
 
   if (!response.ok) {
+    console.error("[extract-pdf] Anthropic API error:", response.status, JSON.stringify(data.error || data));
     throw new Error(
       data.error?.message || `Anthropic API error (${response.status})`
     );
