@@ -103,20 +103,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(analysis);
     }
 
-    // No API key — tell the user
+    // No API key — return a real error, not silent defaults
     console.warn("[extract-pdf] No API key configured. Set ANTHROPIC_API_KEY in .env.local");
-    return NextResponse.json({
-      primary_color: "",
-      secondary_color: "",
-      accent_color: "",
-      heading_font: "",
-      body_font: "",
-      brand_voice: "",
-      visual_style: "",
-      _note:
-        "PDF uploaded but no AI key is configured. Add ANTHROPIC_API_KEY to your .env.local file to enable intelligent brand extraction. Claude will visually analyze every page of your PDF to extract colors, fonts, voice, and style.",
-      _needs_key: true,
-    });
+    return NextResponse.json(
+      { error: "No AI API key configured. Add ANTHROPIC_API_KEY to your .env.local file and restart the dev server." },
+      { status: 503 }
+    );
   } catch (error) {
     console.error("[extract-pdf] Extraction failed:", error);
     return NextResponse.json(

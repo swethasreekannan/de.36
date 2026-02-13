@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Globe, Upload, ArrowRight, Loader2, Sparkles } from "lucide-react";
+import { Globe, Upload, ArrowRight, Loader2, Sparkles, AlertCircle, CheckCircle } from "lucide-react";
 
 export default function NewProjectPage() {
   const router = useRouter();
   const [step, setStep] = useState<"info" | "brand">("info");
   const [loading, setLoading] = useState(false);
   const [extracting, setExtracting] = useState(false);
+  const [extractError, setExtractError] = useState<string | null>(null);
 
   // Step 1: Project info
   const [name, setName] = useState("");
@@ -20,9 +21,17 @@ export default function NewProjectPage() {
   const [websiteUrl, setWebsiteUrl] = useState("");
   const [extractedBrand, setExtractedBrand] = useState<Record<string, unknown> | null>(null);
 
+  // Helper: check if extracted data has real brand values (not empty/error)
+  function isValidBrandData(data: Record<string, unknown> | null): boolean {
+    if (!data) return false;
+    if (data._needs_key || data.error || data.raw) return false;
+    return !!(data.primary_color || data.heading_font || data.brand_voice);
+  }
+
   async function handleExtractFromUrl() {
     if (!websiteUrl) return;
     setExtracting(true);
+    setExtractError(null);
     try {
       const res = await fetch("/api/brand/extract-url", {
         method: "POST",
@@ -30,9 +39,16 @@ export default function NewProjectPage() {
         body: JSON.stringify({ url: websiteUrl }),
       });
       const data = await res.json();
-      setExtractedBrand(data);
+      if (!res.ok) {
+        setExtractError(data.error || "URL extraction failed");
+        setExtractedBrand(null);
+      } else {
+        setExtractedBrand(data);
+        setExtractError(null);
+      }
     } catch {
-      alert("Failed to extract brand from URL");
+      setExtractError("Failed to connect to extraction API");
+      setExtractedBrand(null);
     }
     setExtracting(false);
   }
@@ -41,6 +57,8 @@ export default function NewProjectPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     setExtracting(true);
+    setExtractError(null);
+    setExtractedBrand(null);
     try {
       const formData = new FormData();
       formData.append("file", file);
@@ -50,18 +68,18 @@ export default function NewProjectPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        alert(`Brand extraction failed: ${data.error || "Unknown error"}. Check your ANTHROPIC_API_KEY in .env.local and ensure you have API credits.`);
+        setExtractError(data.error || `Extraction failed (HTTP ${res.status})`);
         setExtractedBrand(null);
-      } else if (data._needs_key) {
-        setExtractedBrand(data);
-      } else if (data.error || data._note?.includes("could not be parsed")) {
-        alert(`Brand extraction returned unexpected data: ${data._note || data.error}`);
+      } else if (data.raw || data._note?.includes("could not be parsed")) {
+        setExtractError("AI returned unparseable data. Try again or use a different PDF.");
         setExtractedBrand(null);
       } else {
         setExtractedBrand(data);
+        setExtractError(null);
       }
     } catch {
-      alert("Failed to extract brand from PDF. Check the browser console for details.");
+      setExtractError("Network error — could not reach the server.");
+      setExtractedBrand(null);
     }
     setExtracting(false);
   }
@@ -78,8 +96,8 @@ export default function NewProjectPage() {
       });
       const project = await res.json();
 
-      // If we have extracted brand data, update the brand kit
-      if (extractedBrand) {
+      // Only PATCH brand kit if we have real extracted data
+      if (isValidBrandData(extractedBrand)) {
         await fetch(`/api/projects/${project.id}/brand`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -231,21 +249,26 @@ export default function NewProjectPage() {
             </div>
           )}
 
-          {/* Extracted brand preview */}
-          {extractedBrand && (
-            <div className={`bg-[var(--card)] border rounded-xl p-6 animate-fade-in ${
-              extractedBrand._needs_key ? "border-[var(--warning,orange)]/30" : "border-[var(--success)]/30"
-            }`}>
-              {extractedBrand._needs_key ? (
+          {/* Error state */}
+          {extractError && (
+            <div className="bg-[var(--card)] border border-red-500/30 rounded-xl p-6 animate-fade-in">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-sm font-medium text-[orange] mb-2">API key required</p>
-                  <p className="text-xs text-[var(--muted)]">
-                    {String(extractedBrand._note || "Add ANTHROPIC_API_KEY to .env.local to enable AI-powered brand extraction.")}
-                  </p>
+                  <p className="text-sm font-medium text-red-500">Brand extraction failed</p>
+                  <p className="text-xs text-[var(--muted)] mt-1">{extractError}</p>
                 </div>
-              ) : (
+              </div>
+            </div>
+          )}
+
+          {/* Extracted brand preview */}
+          {extractedBrand && isValidBrandData(extractedBrand) && (
+            <div className="bg-[var(--card)] border border-[var(--success)]/30 rounded-xl p-6 animate-fade-in">
                 <>
-                  <p className="text-sm font-medium text-[var(--success)] mb-3">Brand elements extracted</p>
+                  <p className="text-sm font-medium text-[var(--success)] mb-3 flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4" /> Brand elements extracted
+                  </p>
 
                   {/* Colors row */}
                   <div className="flex items-center gap-3 mb-4">
@@ -325,7 +348,6 @@ export default function NewProjectPage() {
                     ) : null}
                   </div>
                 </>
-              )}
             </div>
           )}
 
