@@ -204,7 +204,7 @@ export default function NewProjectPage() {
           {brandMethod === "pdf" && (
             <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-6">
               <label className="block text-sm font-medium mb-2">Upload Brand Guidelines</label>
-              <div className="border-2 border-dashed border-[var(--border)] rounded-lg p-8 text-center hover:border-[var(--accent)]/30 transition-colors">
+              <label className="relative block border-2 border-dashed border-[var(--border)] rounded-lg p-8 text-center hover:border-[var(--accent)]/30 transition-colors cursor-pointer">
                 <Upload className="w-8 h-8 text-[var(--muted)] mx-auto mb-2" />
                 <p className="text-sm text-[var(--muted)]">Drop your PDF here or click to browse</p>
                 <input
@@ -212,9 +212,8 @@ export default function NewProjectPage() {
                   accept=".pdf"
                   onChange={handleExtractFromPdf}
                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                  style={{ position: "relative" }}
                 />
-              </div>
+              </label>
               {extracting && (
                 <div className="flex items-center gap-2 mt-3 text-sm text-[var(--accent)]">
                   <Loader2 className="w-4 h-4 animate-spin" /> Analyzing brand guidelines...
