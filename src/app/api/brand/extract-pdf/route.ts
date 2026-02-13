@@ -3,8 +3,66 @@ import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { v4 as uuid } from "uuid";
 
-// Extract brand elements from an uploaded PDF brand guidelines document
-// Uses AI to read and analyze the PDF content
+// Brand extraction agent prompt — teaches the LLM how to analyze brand guidelines
+const BRAND_AGENT_PROMPT = `You are an expert brand analyst agent. You are reviewing a brand guidelines PDF document.
+
+Your job: extract every brand element from this document with precision. You have been trained to identify:
+
+## COLORS
+Look at color swatches, palette sections, logo usage, backgrounds, and any hex/RGB values shown.
+- Primary color: the dominant brand color (logo, headers, key UI elements)
+- Secondary color: the supporting brand color
+- Accent color: used for CTAs, highlights, or emphasis
+- Background color: typical page/section backgrounds
+- Extended palette: any additional brand colors
+
+## TYPOGRAPHY
+Look for font specimens, typography sections, or any named typefaces.
+- Heading/display font family (exact name, e.g. "Montserrat", "Playfair Display")
+- Body/paragraph font family
+- Note specific weights if mentioned (Bold, Light, etc.)
+
+## BRAND IDENTITY
+- Tagline or slogan
+- Mission statement or brand purpose
+- Target audience
+- Brand voice (how the brand speaks — formal, warm, bold, technical, etc.)
+- Writing style guidelines
+- Visual style (clean, organic, geometric, minimalist, etc.)
+
+## BRAND RULES
+- Dos: things the brand should always do
+- Don'ts: things the brand must avoid
+
+## INSTRUCTIONS
+- Be precise with hex color values. Estimate from visual swatches if exact values aren't printed.
+- If a color appears as a large swatch, read its hex value from any labels nearby.
+- For fonts, use the exact typeface name shown in the document.
+- Extract real content — never return placeholder or generic values.
+- If you truly cannot find a field, leave it as empty string or empty array.
+
+Return ONLY a JSON object with this structure:
+{
+  "primary_color": "#hex",
+  "secondary_color": "#hex",
+  "accent_color": "#hex",
+  "background_color": "#hex",
+  "colors_extended": ["#hex1", "#hex2"],
+  "heading_font": "Font Name",
+  "body_font": "Font Name",
+  "tagline": "",
+  "brand_voice": "description of how the brand communicates",
+  "writing_style": "guidelines for written content",
+  "visual_style": "description of the visual identity",
+  "mission": "",
+  "target_audience": "",
+  "tone_keywords": ["keyword1", "keyword2"],
+  "mood_keywords": ["keyword1", "keyword2"],
+  "dos": ["brand guideline dos"],
+  "donts": ["brand guideline donts"]
+}
+
+Return ONLY valid JSON. No markdown fences, no explanation, no commentary.`;
 
 export async function POST(req: NextRequest) {
   try {
@@ -15,107 +73,142 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
     }
 
-    // Save file temporarily
+    // Save file for reference
     const uploadsDir = path.join(process.cwd(), "data", "uploads");
     await mkdir(uploadsDir, { recursive: true });
     const filePath = path.join(uploadsDir, `${uuid()}-${file.name}`);
     const bytes = await file.arrayBuffer();
-    await writeFile(filePath, Buffer.from(bytes));
-
-    // Read file content as text (basic extraction)
-    const textContent = Buffer.from(bytes).toString("utf-8").slice(0, 8000);
+    const buffer = Buffer.from(bytes);
+    await writeFile(filePath, buffer);
 
     const anthropicKey = process.env.ANTHROPIC_API_KEY;
     const openaiKey = process.env.OPENAI_API_KEY;
 
-    if (anthropicKey || openaiKey) {
-      const analysis = await analyzeDocWithAI(
-        anthropicKey || openaiKey!,
-        !!anthropicKey,
-        file.name,
-        textContent
-      );
+    if (anthropicKey) {
+      // Send the actual PDF to Claude using native document support
+      // Claude can SEE the PDF pages — colors, fonts, layouts, everything
+      const pdfBase64 = buffer.toString("base64");
+      const analysis = await analyzeWithClaude(anthropicKey, pdfBase64);
       return NextResponse.json(analysis);
     }
 
-    // Without AI, return empty template for manual fill
+    if (openaiKey) {
+      // OpenAI fallback: send text content (less accurate for visual elements)
+      const textContent = buffer.toString("utf-8").slice(0, 8000);
+      const analysis = await analyzeWithOpenAI(openaiKey, file.name, textContent);
+      return NextResponse.json(analysis);
+    }
+
+    // No API key — tell the user
     return NextResponse.json({
-      primary_color: "#000000",
-      secondary_color: "#666666",
-      accent_color: "#0066FF",
-      heading_font: "Inter",
-      body_font: "Inter",
+      primary_color: "",
+      secondary_color: "",
+      accent_color: "",
+      heading_font: "",
+      body_font: "",
       brand_voice: "",
       visual_style: "",
-      _note: "PDF uploaded successfully. Add an ANTHROPIC_API_KEY or OPENAI_API_KEY to enable AI-powered brand extraction.",
+      _note:
+        "PDF uploaded but no AI key is configured. Add ANTHROPIC_API_KEY to your .env.local file to enable intelligent brand extraction. Claude will visually analyze every page of your PDF to extract colors, fonts, voice, and style.",
+      _needs_key: true,
     });
   } catch (error) {
-    return NextResponse.json({ error: `PDF extraction failed: ${error}` }, { status: 500 });
+    return NextResponse.json(
+      { error: `PDF extraction failed: ${error}` },
+      { status: 500 }
+    );
   }
 }
 
-async function analyzeDocWithAI(apiKey: string, isAnthropic: boolean, fileName: string, textContent: string) {
-  const prompt = `You are analyzing a brand guidelines document named "${fileName}". Extract all brand elements you can find.
+async function analyzeWithClaude(apiKey: string, pdfBase64: string) {
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-5-20250929",
+      max_tokens: 2048,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "document",
+              source: {
+                type: "base64",
+                media_type: "application/pdf",
+                data: pdfBase64,
+              },
+            },
+            {
+              type: "text",
+              text: BRAND_AGENT_PROMPT,
+            },
+          ],
+        },
+      ],
+    }),
+  });
 
-Document content excerpt:
-${textContent}
+  const data = await response.json();
 
-Return a JSON object with these fields (fill in what you can detect from the document):
-{
-  "primary_color": "#hex or empty",
-  "secondary_color": "#hex or empty",
-  "accent_color": "#hex or empty",
-  "background_color": "#hex or empty",
-  "colors_extended": [],
-  "heading_font": "font name or empty",
-  "body_font": "font name or empty",
-  "tagline": "",
-  "brand_voice": "description",
-  "writing_style": "guidelines for writing",
-  "visual_style": "description",
-  "mission": "",
-  "target_audience": "",
-  "tone_keywords": [],
-  "mood_keywords": [],
-  "dos": ["brand dos"],
-  "donts": ["brand donts"]
+  if (!response.ok) {
+    throw new Error(
+      data.error?.message || `Anthropic API error (${response.status})`
+    );
+  }
+
+  const text = data.content?.[0]?.text || "{}";
+  const cleaned = text
+    .replace(/```json\s*/g, "")
+    .replace(/```\s*/g, "")
+    .trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    return { raw: text, _note: "AI response could not be parsed as JSON" };
+  }
 }
 
-Return ONLY the JSON object.`;
+async function analyzeWithOpenAI(
+  apiKey: string,
+  fileName: string,
+  textContent: string
+) {
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "user",
+          content: `You are analyzing a brand guidelines document named "${fileName}".\n\nDocument text:\n${textContent}\n\n${BRAND_AGENT_PROMPT}`,
+        },
+      ],
+      max_tokens: 2048,
+      response_format: { type: "json_object" },
+    }),
+  });
 
-  if (isAnthropic) {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-5-20250929",
-        max_tokens: 1024,
-        messages: [{ role: "user", content: prompt }],
-      }),
-    });
-    const data = await response.json();
-    const text = data.content?.[0]?.text || "{}";
-    try { return JSON.parse(text); } catch { return { raw: text }; }
-  } else {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
-        max_tokens: 1024,
-        response_format: { type: "json_object" },
-      }),
-    });
-    const data = await response.json();
-    const text = data.choices?.[0]?.message?.content || "{}";
-    try { return JSON.parse(text); } catch { return { raw: text }; }
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      data.error?.message || `OpenAI API error (${response.status})`
+    );
+  }
+
+  const text = data.choices?.[0]?.message?.content || "{}";
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { raw: text, _note: "AI response could not be parsed as JSON" };
   }
 }

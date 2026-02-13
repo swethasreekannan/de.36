@@ -224,34 +224,99 @@ export default function NewProjectPage() {
 
           {/* Extracted brand preview */}
           {extractedBrand && (
-            <div className="bg-[var(--card)] border border-[var(--success)]/30 rounded-xl p-6 animate-fade-in">
-              <p className="text-sm font-medium text-[var(--success)] mb-3">Brand elements extracted</p>
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                {typeof extractedBrand.primary_color === "string" && extractedBrand.primary_color ? (
-                  <div className="flex items-center gap-2">
-                    <div className="w-5 h-5 rounded border border-[var(--border)]" style={{ background: extractedBrand.primary_color }} />
-                    <span className="text-[var(--muted)]">Primary: {extractedBrand.primary_color}</span>
+            <div className={`bg-[var(--card)] border rounded-xl p-6 animate-fade-in ${
+              extractedBrand._needs_key ? "border-[var(--warning,orange)]/30" : "border-[var(--success)]/30"
+            }`}>
+              {extractedBrand._needs_key ? (
+                <div>
+                  <p className="text-sm font-medium text-[orange] mb-2">API key required</p>
+                  <p className="text-xs text-[var(--muted)]">
+                    {String(extractedBrand._note || "Add ANTHROPIC_API_KEY to .env.local to enable AI-powered brand extraction.")}
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <p className="text-sm font-medium text-[var(--success)] mb-3">Brand elements extracted</p>
+
+                  {/* Colors row */}
+                  <div className="flex items-center gap-3 mb-4">
+                    {[
+                      { label: "Primary", value: extractedBrand.primary_color },
+                      { label: "Secondary", value: extractedBrand.secondary_color },
+                      { label: "Accent", value: extractedBrand.accent_color },
+                      { label: "Background", value: extractedBrand.background_color },
+                    ]
+                      .filter((c) => typeof c.value === "string" && c.value)
+                      .map((c) => (
+                        <div key={c.label} className="flex items-center gap-1.5">
+                          <div
+                            className="w-6 h-6 rounded-md border border-[var(--border)] shadow-sm"
+                            style={{ background: String(c.value) }}
+                          />
+                          <div className="text-[10px]">
+                            <span className="text-[var(--muted)] block">{c.label}</span>
+                            <span className="text-[var(--foreground)] font-mono">{String(c.value)}</span>
+                          </div>
+                        </div>
+                      ))}
+                    {/* Extended colors */}
+                    {Array.isArray(extractedBrand.colors_extended) &&
+                      (extractedBrand.colors_extended as string[])
+                        .filter((c) => typeof c === "string" && c)
+                        .map((color, i) => (
+                          <div key={i} className="flex items-center gap-1.5">
+                            <div
+                              className="w-6 h-6 rounded-md border border-[var(--border)] shadow-sm"
+                              style={{ background: color }}
+                            />
+                            <span className="text-[10px] text-[var(--foreground)] font-mono">{color}</span>
+                          </div>
+                        ))}
                   </div>
-                ) : null}
-                {typeof extractedBrand.secondary_color === "string" && extractedBrand.secondary_color ? (
-                  <div className="flex items-center gap-2">
-                    <div className="w-5 h-5 rounded border border-[var(--border)]" style={{ background: extractedBrand.secondary_color }} />
-                    <span className="text-[var(--muted)]">Secondary: {extractedBrand.secondary_color}</span>
+
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    {typeof extractedBrand.heading_font === "string" && extractedBrand.heading_font ? (
+                      <div><span className="text-[var(--muted)]">Heading Font:</span> <span className="font-medium">{extractedBrand.heading_font}</span></div>
+                    ) : null}
+                    {typeof extractedBrand.body_font === "string" && extractedBrand.body_font ? (
+                      <div><span className="text-[var(--muted)]">Body Font:</span> <span className="font-medium">{extractedBrand.body_font}</span></div>
+                    ) : null}
+                    {typeof extractedBrand.tagline === "string" && extractedBrand.tagline ? (
+                      <div className="col-span-2"><span className="text-[var(--muted)]">Tagline:</span> <span className="italic">&ldquo;{extractedBrand.tagline}&rdquo;</span></div>
+                    ) : null}
+                    {typeof extractedBrand.brand_voice === "string" && extractedBrand.brand_voice ? (
+                      <div className="col-span-2"><span className="text-[var(--muted)]">Voice:</span> {extractedBrand.brand_voice}</div>
+                    ) : null}
+                    {typeof extractedBrand.visual_style === "string" && extractedBrand.visual_style ? (
+                      <div className="col-span-2"><span className="text-[var(--muted)]">Visual Style:</span> {extractedBrand.visual_style}</div>
+                    ) : null}
+                    {Array.isArray(extractedBrand.tone_keywords) && (extractedBrand.tone_keywords as string[]).length > 0 ? (
+                      <div className="col-span-2 flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[var(--muted)]">Tone:</span>
+                        {(extractedBrand.tone_keywords as string[]).map((kw, i) => (
+                          <span key={i} className="px-2 py-0.5 rounded-full bg-[var(--accent)]/10 text-[var(--accent)] text-[10px]">{kw}</span>
+                        ))}
+                      </div>
+                    ) : null}
+                    {Array.isArray(extractedBrand.dos) && (extractedBrand.dos as string[]).length > 0 ? (
+                      <div>
+                        <span className="text-[var(--success)] font-medium block mb-1">Do&apos;s</span>
+                        <ul className="text-[var(--muted)] space-y-0.5">
+                          {(extractedBrand.dos as string[]).slice(0, 3).map((d, i) => <li key={i}>+ {d}</li>)}
+                        </ul>
+                      </div>
+                    ) : null}
+                    {Array.isArray(extractedBrand.donts) && (extractedBrand.donts as string[]).length > 0 ? (
+                      <div>
+                        <span className="text-[red]/70 font-medium block mb-1">Don&apos;ts</span>
+                        <ul className="text-[var(--muted)] space-y-0.5">
+                          {(extractedBrand.donts as string[]).slice(0, 3).map((d, i) => <li key={i}>- {d}</li>)}
+                        </ul>
+                      </div>
+                    ) : null}
                   </div>
-                ) : null}
-                {typeof extractedBrand.heading_font === "string" && extractedBrand.heading_font ? (
-                  <div><span className="text-[var(--muted)]">Heading Font: {extractedBrand.heading_font}</span></div>
-                ) : null}
-                {typeof extractedBrand.body_font === "string" && extractedBrand.body_font ? (
-                  <div><span className="text-[var(--muted)]">Body Font: {extractedBrand.body_font}</span></div>
-                ) : null}
-                {typeof extractedBrand.brand_voice === "string" && extractedBrand.brand_voice ? (
-                  <div className="col-span-2"><span className="text-[var(--muted)]">Voice: {extractedBrand.brand_voice}</span></div>
-                ) : null}
-                {typeof extractedBrand.visual_style === "string" && extractedBrand.visual_style ? (
-                  <div className="col-span-2"><span className="text-[var(--muted)]">Style: {extractedBrand.visual_style}</span></div>
-                ) : null}
-              </div>
+                </>
+              )}
             </div>
           )}
 
