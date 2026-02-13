@@ -15,7 +15,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
-      <body className="antialiased">
+      <body className="antialiased" suppressHydrationWarning>
         <Sidebar />
         <div className="ml-64 min-h-screen flex flex-col">
           <Topbar />
